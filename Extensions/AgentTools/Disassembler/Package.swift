@@ -15,7 +15,7 @@ import PackageDescription
 let package = Package(
     name: "ApelinAgentToolsDisassembler",
     platforms: [
-        .iOS(.v16),
+        .iOS(.v15),
         .macOS(.v13),
     ],
     products: [
