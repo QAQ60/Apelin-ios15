@@ -139,3 +139,16 @@ struct ChatWidgetRow: View {
         .accessibilityValue(Text(chat.statusLine))
     }
 }
+
+private extension View {
+    /// `.contentTransition(.numericText())` arrived in iOS 16; below that the
+    /// digits of the summary line change in place, as they always did.
+    @ViewBuilder
+    func widgetNumericTransition() -> some View {
+        if #available(iOS 16.0, *) {
+            contentTransition(.numericText())
+        } else {
+            self
+        }
+    }
+}
