@@ -1219,10 +1219,10 @@
 		};
 		A20000000000000000000004 /* XCRemoteSwiftPackageReference "MarkdownView" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Lakr233/MarkdownView";
+			repositoryURL = "https://github.com/QAQ60/MarkdownView";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 4.8.5;
+				kind = branch;
+				branch = main;
 			};
 		};
 		A20000000000000000000006 /* XCRemoteSwiftPackageReference "libghostty-spm" */ = {
