@@ -31,13 +31,33 @@ enum DistributionPublishing {
         anchor: UIView,
         onShared: @escaping () -> Void = {},
     ) async {
+        await share(item, from: presenter, sourceView: anchor, barButtonItem: nil, onShared: onShared)
+    }
+
+    static func share(
+        _ item: Item,
+        from presenter: UIViewController,
+        anchor: UIBarButtonItem,
+        onShared: @escaping () -> Void = {},
+    ) async {
+        await share(item, from: presenter, sourceView: nil, barButtonItem: anchor, onShared: onShared)
+    }
+
+    private static func share(
+        _ item: Item,
+        from presenter: UIViewController,
+        sourceView: UIView?,
+        barButtonItem: UIBarButtonItem?,
+        onShared: @escaping () -> Void,
+    ) async {
         do {
             let file = try await Task.detached {
                 try DistributionPackages.verify(path: item.path, digest: item.digest)
             }.value
             let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
-            sheet.popoverPresentationController?.sourceView = anchor
-            sheet.popoverPresentationController?.sourceRect = anchor.bounds
+            sheet.popoverPresentationController?.sourceView = sourceView
+            sheet.popoverPresentationController?.sourceRect = sourceView?.bounds ?? .zero
+            sheet.popoverPresentationController?.barButtonItem = barButtonItem
             sheet.completionWithItemsHandler = { _, completed, _, _ in
                 guard completed else { return }
                 SharedPackages.record(item.digest)
