@@ -27,7 +27,7 @@ let swiftSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "ApelinKit",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
         .library(name: "ApelinCore", targets: ["ApelinCore"]),
         .library(name: "ApelinProtocol", targets: ["ApelinProtocol"]),
