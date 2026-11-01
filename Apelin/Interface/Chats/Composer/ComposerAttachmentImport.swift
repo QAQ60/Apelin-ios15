@@ -137,9 +137,14 @@ final class ComposerAttachmentImport: NSObject, UIImagePickerControllerDelegate,
     /// `url` as an attachment named `name`: a regular file of at most 32 MB,
     /// read by its canonical path, an image or else text (a PDF's own).
     nonisolated static func readAttachment(at url: URL, name: String) throws -> ComposerAttachment {
-        guard let path = CanonicalPath.resolve(url.path) else {
-            throw ApelinError(.badRequest, String(localized: "The selected file could not be read."))
-        }
+        // realpath(3) needs search permission on every component of the path,
+        // while a security-scoped URL may hide parts of that chain even when
+        // the file itself is readable under the granted scope. When it cannot
+        // resolve, fall back to the standardized path and let the actual
+        // read below be the judge (and the messenger, if it truly fails).
+        let path = CanonicalPath.resolve(url.path)
+            ?? CanonicalPath.resolve(url.standardizedFileURL.path)
+            ?? url.standardizedFileURL.path
         let source = URL(fileURLWithPath: path)
         let values = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true, let size = values.fileSize, size <= 32 * 1024 * 1024 else {
