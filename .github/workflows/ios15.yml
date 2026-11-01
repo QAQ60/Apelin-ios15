@@ -91,7 +91,7 @@ jobs:
         env:
           ALLOW_PRIVATE_BUILD_PATHS: "1"
         run: |
-          make --no-print-directory _package FLAVOR=roothide IOS_SDK_TIER="$SDK" DERIVED_DATA="$RUNNER_TEMP/dd"
+          make --no-print-directory _package FLAVOR=rootless IOS_SDK_TIER="$SDK" DERIVED_DATA="$RUNNER_TEMP/dd"
           make --no-print-directory _package FLAVOR=rootless IOS_SDK_TIER="$SDK" DERIVED_DATA="$RUNNER_TEMP/dd"
           ls -lh build/Packages/
 
