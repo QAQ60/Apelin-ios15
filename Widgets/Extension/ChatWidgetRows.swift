@@ -76,7 +76,7 @@ struct ChatWidgetHeader: View {
                     .font(.rounded(.subheadline))
                     .opacity(0.6)
                     .lineLimit(1)
-                    .contentTransition(.numericText())
+                    .widgetNumericTransition()
             }
         }
         .accessibilityElement(children: .combine)
