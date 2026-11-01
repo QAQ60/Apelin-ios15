@@ -18,7 +18,7 @@ import PackageDescription
 ///   retarget uses its signature and entitlements blobs too.
 let package = Package(
     name: "ApelinFormats",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
         .library(name: "ApelinMachO", targets: ["ApelinMachO"]),
         .library(name: "ApelinDebian", targets: ["ApelinDebian"]),
