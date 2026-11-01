@@ -11,7 +11,7 @@ import PackageDescription
 /// the tests drive `Diagnostics` through a fake `IcliSurface`.
 let package = Package(
     name: "ApelinDiagnostics",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
         // The mobile diagnostics worker: logs, crash reports, screenshot, UI
         // tree and actions, foreground app, running apps, respring fallback.
