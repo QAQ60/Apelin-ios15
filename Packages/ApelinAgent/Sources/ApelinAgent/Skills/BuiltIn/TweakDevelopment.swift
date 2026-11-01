@@ -12,7 +12,7 @@ extension BuiltInSkills {
 
         ## The project
         - `apelin-project.json` is the build description: sources, compile and
-          link flags, frameworks, the deployment target (16.0) and build steps.
+          link flags, frameworks, the deployment target (15.0) and build steps.
           Changing it, or a build script it names, makes the next `apelin_project_build` ask the
           user once (Strict mode); editing sources never does. Change it only
           when the task needs it, and say why. The apelin-project-description skill

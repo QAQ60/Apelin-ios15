@@ -150,7 +150,7 @@ public struct ProjectStore: Sendable {
         let slug = Self.slug(name)
         resolved["bundleID"] = values["bundleID"] ?? .string("local.apelin.\(slug)")
         resolved["packageID"] = values["packageID"] ?? .string("local.apelin.\(slug)")
-        resolved["deploymentTarget"] = values["deploymentTarget"] ?? .string("16.0")
+        resolved["deploymentTarget"] = values["deploymentTarget"] ?? .string("15.0")
         resolved["architectures"] = values["architectures"]
             ?? .object(JSONObject(Bootstrap.allCases.compactMap { bootstrap in
                 manifest.requirements.architectures[bootstrap].map {

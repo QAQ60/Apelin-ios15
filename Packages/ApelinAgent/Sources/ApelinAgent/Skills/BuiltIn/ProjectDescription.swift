@@ -39,7 +39,7 @@ extension BuiltInSkills {
           such as a tweak with its own preference bundle.
         - `language`: `objc` and `c` compile `.m` and `.c` files only;
           `swift` compiles `.swift` only. A product never mixes them.
-        - `deploymentTarget`: a string, "16.0" or later.
+        - `deploymentTarget`: a string, "15.0" or later.
         - `architectures`: `{"rootless": ["arm64", "arm64e"], "roothide":
           ["arm64e"]}`. The keys present are the bootstraps it packages for.
         - `configurations`: `Debug` and `Release`, each `{optimization,

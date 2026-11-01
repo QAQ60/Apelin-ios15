@@ -39,7 +39,7 @@ public struct DevelopmentEnvironment: Sendable, Equatable {
     /// What a project gets when it names no deployment target, and what a
     /// command outside a project builds for: `projectCreate`'s default and
     /// the oldest iOS Apelin runs on.
-    public static let defaultDeploymentTarget = "16.0"
+    public static let defaultDeploymentTarget = "15.0"
 
     public var toolchain: Toolchain?
     public var sdk: SDK?
