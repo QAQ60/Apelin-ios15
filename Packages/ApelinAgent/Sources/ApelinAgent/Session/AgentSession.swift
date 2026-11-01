@@ -416,7 +416,7 @@ public actor AgentSession {
         titleTask = Task { [weak self] in
             let cancellation = CancellationHandle()
             let timeout = Task {
-                do { try await Task.sleep(for: .seconds(20)) } catch { return }
+                do { try await Task.sleep(nanoseconds: 20 * 1_000_000_000) } catch { return }
                 cancellation.cancel()
             }
             defer { timeout.cancel() }

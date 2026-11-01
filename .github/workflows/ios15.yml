@@ -56,7 +56,6 @@ jobs:
             -scheme Apelin \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -keepGoing \
             -derivedDataPath "$RUNNER_TEMP/dd" \
             -skipMacroValidation \
             -skipPackagePluginValidation \

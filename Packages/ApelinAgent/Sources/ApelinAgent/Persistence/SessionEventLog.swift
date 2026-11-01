@@ -97,7 +97,7 @@ public actor SessionEventLog {
     /// A pending delta is written once it holds this many bytes of UTF-8…
     static let recordBytes = 512
     /// …or this long after its first delta.
-    static let recordDeadline: Duration = .milliseconds(250)
+    static let recordDeadline: UInt64 = 250 * 1_000_000
 
     /// Streamed text not written yet: one kind's deltas, joined.
     private struct PendingDelta {
@@ -271,7 +271,7 @@ public actor SessionEventLog {
             try flush()
         } else if deadline == nil {
             deadline = Task { [weak self] in
-                do { try await Task.sleep(for: Self.recordDeadline) } catch { return }
+                do { try await Task.sleep(nanoseconds: Self.recordDeadline) } catch { return }
                 await self?.deadlinePassed()
             }
         }
