@@ -127,12 +127,7 @@
       }
     },
     {
-      "identity" : "markdownview",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/QAQ60/MarkdownView",
-      "state" : {
-        "branch" : "main",
-        "revision" : "9741a538b08e9c3dc5cd927e31dee03864266543"
+      74112e351cedfa1e1a651cea7f0d9da37c69bfc89741a538b08e9c3dc5cd927e31dee03864266543"
       }
     },
     {
