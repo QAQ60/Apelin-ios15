@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
     name: "ApelinAgent",
     platforms: [
-        .iOS(.v16),
+        .iOS(.v15),
         // kwwk declares macOS 14, and SwiftPM refuses a product whose floor
         // is below a dependency's. macOS is only the test host here; the
         // product ships on iOS.
