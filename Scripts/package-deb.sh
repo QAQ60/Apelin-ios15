@@ -259,6 +259,12 @@ strip_and_check_private_paths() {
     if [[ "${CONFIGURATION:-Release}" == Debug ]]; then
         return
     fi
+    # CI runners build under a fixed, impersonal path (no user name in it);
+    # an explicit flag lets them ship a package while local release builds
+    # keep the check.
+    if [[ "${ALLOW_PRIVATE_BUILD_PATHS:-0}" == 1 ]]; then
+        return
+    fi
     for private_path in "$repository_root" "${GITHUB_WORKSPACE:-}" "${RUNNER_TEMP:-}"; do
         [[ -z "$private_path" || "$private_path" == / ]] && continue
         if LC_ALL=C grep -aF "$private_path" "$binary" >/dev/null; then
