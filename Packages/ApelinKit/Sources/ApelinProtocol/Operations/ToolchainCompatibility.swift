@@ -30,7 +30,7 @@ public struct ToolchainCompatibility: Codable, Sendable, Equatable {
         sourceProductIDs: [String] = [],
         sourceSHA256s: [String: String]? = nil,
         hostArchitecture: String = "arm64",
-        minimumHost: String = "16.0",
+        minimumHost: String = "15.0",
         cpuFeatures: [String] = ["FEAT_LRCPC"],
         requiredLibcxxSymbols: [String]? = nil,
         recommendedSDK: String,

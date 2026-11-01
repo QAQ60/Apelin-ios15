@@ -7,7 +7,7 @@ public struct ToolchainSetup: Sendable {
     public static let schemeVersion = 2
     /// The iOS version setup builds every tool for unless told otherwise, and so the
     /// oldest host each release's `compatibility` states.
-    public static let defaultMinimumOS = "16.0"
+    public static let defaultMinimumOS = "15.0"
     public let minimumOS: String
     public let limits: ToolchainArchiveLimits
     public init(minimumOS: String = Self.defaultMinimumOS, limits: ToolchainArchiveLimits = .init()) {
