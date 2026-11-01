@@ -113,7 +113,7 @@ enum RepositoryImporter {
     /// How long a stopped clone may take to end before the workspace is
     /// left where it is and the user told: a host that stopped answering
     /// mid-fetch can hold a clone, and the sheet must not wait on it.
-    static let discardWait: Duration = .seconds(15)
+    static let discardWait: UInt64 = 15 * 1_000_000_000
 
     /// Takes the workspace away again, its clone stopped and read to its
     /// end first, so the folder goes only once nothing writes in it.
@@ -133,7 +133,7 @@ enum RepositoryImporter {
                     return true
                 }
                 group.addTask {
-                    try? await Task.sleep(for: discardWait)
+                    try? await Task.sleep(nanoseconds: discardWait)
                     return false
                 }
                 let first = await group.next() ?? false

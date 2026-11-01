@@ -28,7 +28,7 @@ enum DistributionPublishing {
     static func share(
         _ item: Item,
         from presenter: UIViewController,
-        anchor: any UIPopoverPresentationControllerSourceItem,
+        anchor: UIView,
         onShared: @escaping () -> Void = {},
     ) async {
         do {
@@ -36,7 +36,8 @@ enum DistributionPublishing {
                 try DistributionPackages.verify(path: item.path, digest: item.digest)
             }.value
             let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
-            sheet.popoverPresentationController?.sourceItem = anchor
+            sheet.popoverPresentationController?.sourceView = anchor
+            sheet.popoverPresentationController?.sourceRect = anchor.bounds
             sheet.completionWithItemsHandler = { _, completed, _, _ in
                 guard completed else { return }
                 SharedPackages.record(item.digest)

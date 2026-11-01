@@ -58,7 +58,6 @@ extension LogViewerController {
         let onlyFailuresAction = UIAction(
             title: String(localized: "Errors Only"),
             image: UIImage(systemName: "exclamationmark.triangle"),
-            attributes: .keepsMenuPresented,
             state: selectedLevels == [.error, .critical] ? .on : .off,
             handler: { [weak self] action in
                 guard let self else { return }

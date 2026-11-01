@@ -148,7 +148,9 @@ final class SidebarController: UIViewController {
                 completion(self?.projectMenu().children ?? [])
             }]),
         )
-        item.preferredMenuElementOrder = .fixed
+        if #available(iOS 16.0, *) {
+            item.preferredMenuElementOrder = .fixed
+        }
         item.accessibilityLabel = String(localized: "Projects")
         return item
     }()
@@ -165,7 +167,9 @@ final class SidebarController: UIViewController {
             image: UIImage(systemName: "folder.badge.plus"),
         ) { [weak self] _ in self?.openNewProject() }
         let item = UIBarButtonItem(image: UIImage(systemName: "plus"), menu: UIMenu(children: [newChat, newProject]))
-        item.preferredMenuElementOrder = .fixed
+        if #available(iOS 16.0, *) {
+            item.preferredMenuElementOrder = .fixed
+        }
         item.accessibilityLabel = String(localized: "New")
         return item
     }()
@@ -244,9 +248,13 @@ final class SidebarController: UIViewController {
         view.backgroundColor = .panelBackground
 
         // The project name stays at the leading edge; the folder owns switching.
-        navigationItem.style = .editor
+        if #available(iOS 16.0, *) {
+            navigationItem.style = .editor
+        }
         // under the bar, hidden until the list is pulled down
-        navigationItem.preferredSearchBarPlacement = .stacked
+        if #available(iOS 16.0, *) {
+            navigationItem.preferredSearchBarPlacement = .stacked
+        }
         navigationItem.hidesSearchBarWhenScrolling = true
         // Making things stays in the top bar; project switching lives below.
         navigationItem.rightBarButtonItems = [newMenuButton]

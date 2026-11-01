@@ -72,7 +72,10 @@ final class DaemonClient: ApelinTransport, @unchecked Sendable {
             }
             queue.asyncAfter(deadline: .now() + bound) {
                 guard once.claim() else { return }
-                let waited = Duration.seconds(Int(bound)).formatted(.units(allowed: [.seconds], width: .wide))
+                let formatter = DateComponentsFormatter()
+                formatter.allowedUnits = [.second]
+                formatter.unitsStyle = .full
+                let waited = formatter.string(from: bound) ?? "\(Int(bound)) seconds"
                 continuation.resume(
                     throwing: ApelinError(
                         .timeout,

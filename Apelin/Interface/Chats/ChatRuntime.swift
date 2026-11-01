@@ -53,12 +53,12 @@ final class ChatRuntime {
     /// change waits until `saveInterval` after it, so a long history is
     /// written at most once in that time, and a write that took longer
     /// pushes the next one back as far.
-    private var savedAt: [UUID: ContinuousClock.Instant] = [:]
+    private var savedAt: [UUID: Date] = [:]
     /// Saves waiting for their interval, by conversation.
     private var savesDeferred: [UUID: Task<Void, Never>] = [:]
     /// Called once no conversation is being written (`saveNow`).
     private var savesDrained: [() -> Void] = []
-    private static let saveInterval: Duration = .seconds(3)
+    private static let saveInterval: TimeInterval = 3
     /// Who waits for a conversation's compaction to end, by conversation.
     private var compactions: [UUID: CheckedContinuation<AgentCompactionResult, Error>] = [:]
 
@@ -593,7 +593,7 @@ final class ChatRuntime {
                 } catch is CancellationError { return }
                 catch {
                     // A lost connection does not discard the cursor or stop a remote turn.
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
             }
         }
@@ -667,13 +667,16 @@ final class ChatRuntime {
             }
             return
         }
-        let due = savedAt[id].map { $0 + Self.saveInterval } ?? .now
-        if urgent || due <= .now {
+        let due = savedAt[id].map { $0.addingTimeInterval(Self.saveInterval) } ?? Date()
+        if urgent || due <= Date() {
             savesDeferred.removeValue(forKey: id)?.cancel()
             write(id)
         } else if savesDeferred[id] == nil {
             savesDeferred[id] = Task { [weak self] in
-                try? await Task.sleep(until: due)
+                let delay = due.timeIntervalSinceNow
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
                 guard !Task.isCancelled, let self else { return }
                 savesDeferred[id] = nil
                 write(id)
@@ -722,7 +725,7 @@ final class ChatRuntime {
     /// Writes what changed while `id` was being written.
     private func saveEnded(_ id: UUID) {
         saving.remove(id)
-        savedAt[id] = .now
+        savedAt[id] = Date()
         if savesPending.remove(id) != nil {
             persist(id, urgent: savesUrgent.remove(id) != nil)
         }

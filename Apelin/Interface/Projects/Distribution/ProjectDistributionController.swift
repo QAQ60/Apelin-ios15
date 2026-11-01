@@ -322,7 +322,7 @@ final class ProjectDistributionController: TableController {
         showsChecking = false
         updateRows()
         loadingDelay = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(500)) }
+            do { try await Task.sleep(nanoseconds: 500_000_000) }
             catch { return }
             guard let self, !Task.isCancelled, checking else { return }
             showsChecking = true
