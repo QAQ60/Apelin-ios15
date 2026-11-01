@@ -10,7 +10,7 @@
 // deployment floor is not what you set — it is what the linker believes").
 // `make check` keeps its SF Symbol and XPC macro gates, and the packager its
 // rpath check; none of them shows that the app launches on the floor.
-IPHONEOS_DEPLOYMENT_TARGET = 16.0
+IPHONEOS_DEPLOYMENT_TARGET = 15.0
 MACOSX_DEPLOYMENT_TARGET = 13.0
 
 // The asset catalogue's icon set, named here rather than in the pbxproj.
