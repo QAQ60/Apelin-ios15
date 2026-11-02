@@ -152,7 +152,7 @@ struct EventCoalescingTests {
             }
             return false
         }
-        let deadlines = Int(streamed / SessionEventLog.recordDeadline) + 1
+        let deadlines = Int(streamed / .milliseconds(250)) + 1
         let bound = thinking.utf8.count / 512 + text.utf8.count / 512 + 2 + 1 + counts + deadlines
         #expect(deltaRecords <= bound)
         // the provider streamed 6,253 deltas
