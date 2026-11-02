@@ -3,6 +3,7 @@
 
 import ApelinCore
 import ApelinProtocol
+import Foundation
 import PDFKit
 import PhotosUI
 import ScrubberKit
@@ -84,16 +85,18 @@ final class ComposerAttachmentImport: NSObject, UIImagePickerControllerDelegate,
         Task { @MainActor [self] in
             for url in urls {
                 do {
-                    let attachment = try await Task.detached(priority: .userInitiated) {
-                        let scoped = url.startAccessingSecurityScopedResource()
-                        defer {
-                            if scoped {
-                                url.stopAccessingSecurityScopedResource()
-                            }
-                        }
-                        return try Self.readAttachment(at: url, name: url.lastPathComponent)
-                    }.value
+                    guard let host = presenter else { return }
+                    let attachment = try await ProgressCard.run(
+                        title: String(localized: "Reading File"),
+                        message: url.lastPathComponent,
+                        cancellable: false,
+                        from: host,
+                    ) { _ in
+                        try await Self.readPickedFile(at: url, name: url.lastPathComponent)
+                    }
                     receive(attachment)
+                } catch is CancellationError {
+                    return
                 } catch {
                     presenter?.presentNotice(title: "Unable to Import File", message: error.readableMessage)
                 }
@@ -134,14 +137,69 @@ final class ComposerAttachmentImport: NSObject, UIImagePickerControllerDelegate,
         }
     }
 
+    /// A file the picker opened in place, rather than a copy a drop hands
+    /// over. It may live in iCloud Drive, where a file whose bytes are not on
+    /// this device is only a placeholder: `realpath` says it does not exist
+    /// and a plain read finds nothing, so the download is asked for and the
+    /// read is coordinated with the provider that serves it.
+    nonisolated static func readPickedFile(at url: URL, name: String) async throws -> ComposerAttachment {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        await downloadFromICloudIfNeeded(url)
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 32 * 1024 * 1024 {
+            throw ApelinError(.badRequest, String(localized: "Choose a file smaller than 32 MB."))
+        }
+        let data = try coordinatedRead(url)
+        return try attachment(from: data, name: name, pathExtension: url.pathExtension)
+    }
+
+    /// Waits for an iCloud file whose content has not been downloaded yet.
+    /// The picker hands out the item itself, not a copy, so nothing has
+    /// materialised it before the read.
+    nonisolated static func downloadFromICloudIfNeeded(_ url: URL) async {
+        let keys: Set<URLResourceKey> = [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]
+        guard let values = try? url.resourceValues(forKeys: keys),
+              values.isUbiquitousItem == true,
+              values.ubiquitousItemDownloadingStatus != URLUbiquitousItemDownloadingStatus.current
+        else { return }
+        // A pick can sit outside this app's own ubiquity container, where
+        // asking for the download is refused; the coordinator can still fetch
+        // it, so this is not the place to give up.
+        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let status = try? url.resourceValues(forKeys: keys).ubiquitousItemDownloadingStatus
+            if status == URLUbiquitousItemDownloadingStatus.current { return }
+            try? await Task.sleep(nanoseconds: 200 * 1_000_000)
+        }
+    }
+
+    /// Reads by file coordination: a file provider serves an item only while
+    /// it holds the read, and the coordinator also waits out a download that
+    /// began after the status check.
+    nonisolated static func coordinatedRead(_ url: URL) throws -> Data {
+        let outcome = ReadOutcome()
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) { readURL in
+            do {
+                outcome.data = try Data(contentsOf: readURL)
+            } catch {
+                outcome.error = error
+            }
+        }
+        if let data = outcome.data { return data }
+        if let error = outcome.error { throw error }
+        if let coordinationError { throw coordinationError }
+        throw ApelinError(.badRequest, String(localized: "The selected file could not be read."))
+    }
+
     /// `url` as an attachment named `name`: a regular file of at most 32 MB,
     /// read by its canonical path, an image or else text (a PDF's own).
     nonisolated static func readAttachment(at url: URL, name: String) throws -> ComposerAttachment {
-        // realpath(3) needs search permission on every component of the path,
-        // while a security-scoped URL may hide parts of that chain even when
-        // the file itself is readable under the granted scope. When it cannot
-        // resolve, fall back to the standardized path and let the actual
-        // read below be the judge (and the messenger, if it truly fails).
         let path = CanonicalPath.resolve(url.path)
             ?? CanonicalPath.resolve(url.standardizedFileURL.path)
             ?? url.standardizedFileURL.path
@@ -153,12 +211,19 @@ final class ComposerAttachmentImport: NSObject, UIImagePickerControllerDelegate,
                 String(localized: "Choose a regular file smaller than 32 MB."),
             )
         }
-        let data = try Data(contentsOf: source)
+        return try attachment(from: Data(contentsOf: source), name: name, pathExtension: source.pathExtension)
+    }
+
+    /// `data` as an attachment: an image, otherwise text — a PDF's own — and
+    /// at most 32 MB either way.
+    nonisolated static func attachment(from data: Data, name: String, pathExtension: String) throws
+        -> ComposerAttachment
+    {
         guard data.count <= 32 * 1024 * 1024 else {
             throw ApelinError(.badRequest, String(localized: "Choose a file smaller than 32 MB."))
         }
         let image = UIImage(data: data) != nil
-        let text = source.pathExtension.lowercased() == "pdf"
+        let text = pathExtension.lowercased() == "pdf"
             ? PDFDocument(data: data)?.string
             : String(data: data, encoding: .utf8)
         return ComposerAttachment(
@@ -245,5 +310,13 @@ final class ComposerAttachmentImport: NSObject, UIImagePickerControllerDelegate,
             }
         })
         presenter?.present(alert, animated: true)
+    }
+
+    /// What a coordinated read left behind: the bytes, or why there are none.
+    /// A class so the coordinator's accessor can fill it in without the
+    /// read-back having to be a closure's return value.
+    private final class ReadOutcome: @unchecked Sendable {
+        var data: Data?
+        var error: Error?
     }
 }
