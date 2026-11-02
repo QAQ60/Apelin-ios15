@@ -98,7 +98,7 @@ struct EnvironmentPromptTests {
         let prompt = try AgentSession.systemPrompt(configuration, root: ScopedRoot(folder), skills: [])
         #expect(prompt.contains("Default, prepared."))
         #expect(!prompt.contains("This project's") && !prompt.contains("This project binds"))
-        #expect(prompt.contains("IPHONEOS_DEPLOYMENT_TARGET=16.0 (Apelin's default; this chat has no project)"))
+        #expect(prompt.contains("IPHONEOS_DEPLOYMENT_TARGET=15.0 (Apelin's default; this chat has no project)"))
     }
 
     @Test
