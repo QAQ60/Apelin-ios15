@@ -2317,7 +2317,7 @@ do {
     check(path.first == developmentBin, "the terminal's PATH starts with the default toolchain's tools: \(path)")
     check(path.dropFirst().first == "/usr/local/bin" && path.contains("/usr/bin"), "then the bootstrap's and the system's directories: \(path)")
     check(environment["SDKROOT"] == developmentNewSDK, "SDKROOT is the newest SDK it reads: \(String(describing: environment["SDKROOT"]))")
-    check(environment["IPHONEOS_DEPLOYMENT_TARGET"] == "16.0", "outside a project the deployment target is Apelin's default")
+    check(environment["IPHONEOS_DEPLOYMENT_TARGET"] == "15.0", "outside a project the deployment target is Apelin's default")
     check(environment["APELIN_TOOLCHAIN_BIN"] == developmentBin, "the toolchain is named for the login profile snippet")
     check(environment.values.allSatisfy { !$0.contains("tok3n") && !$0.contains("inst-secret") }, "no record field but paths reaches the terminal")
     check(environment["GIT_CONFIG_KEY_0"] == "safe.bareRepository", "the terminal keeps its protected git config")
@@ -2354,7 +2354,7 @@ do {
     // A temporary chat binds nothing: the defaults.
     let temporary = ResolvedProject(id: "temporary:\(UUID().uuidString)", name: "t", path: developmentProject)
     let general = AgentRunCode.environment(preset: nil, project: temporary, installRoot: "/", home: developmentHome)
-    check(general.contains("SDKROOT=\(developmentNewSDK)") && general.contains("IPHONEOS_DEPLOYMENT_TARGET=16.0"),
+    check(general.contains("SDKROOT=\(developmentNewSDK)") && general.contains("IPHONEOS_DEPLOYMENT_TARGET=15.0"),
           "a temporary chat's shell_run has the default toolchain's SDK: \(general)")
 
     // A preset is a read-only command the host chose the words of: its own

@@ -156,9 +156,9 @@
       "pattern": "^([0-9]+:)?[0-9][0-9A-Za-z.+~-]*$"
     },
     "iosVersion": {
-      "description": "16.0 or later: the app's own floor.",
+      "description": "15.0 or later: the app's own floor.",
       "type": "string",
-      "pattern": "^(1[6-9]|[2-9][0-9])\\.[0-9]{1,2}(\\.[0-9]{1,2})?$"
+      "pattern": "^(1[5-9]|[2-9][0-9])\\.[0-9]{1,2}(\\.[0-9]{1,2})?$"
     },
     "identifier": {
       "type": "string",
