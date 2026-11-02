@@ -103,7 +103,7 @@ final class MacPipelineTests: XCTestCase {
             let control = try contents.control()
             XCTAssertEqual(control.package, "com.example.hellotweak")
             XCTAssertEqual(control.architecture, record.architecture)
-            XCTAssertEqual(control["Depends"], "firmware (>= 16.0), mobilesubstrate")
+            XCTAssertEqual(control["Depends"], "firmware (>= 15.0), mobilesubstrate")
             let icon = "https://owngoal-dev.github.io/Apelin/icons/wiki.qaq.apelin.dev.tweak.png"
             XCTAssertEqual(control["Icon"], icon, "the template's package icon")
             let prefix = bootstrap == .rootless ? "/var/jb" : ""

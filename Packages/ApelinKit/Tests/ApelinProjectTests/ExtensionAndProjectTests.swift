@@ -98,7 +98,7 @@ final class ExtensionAndProjectTests: XCTestCase {
                     ? ", \"productName\": \(CanonicalJSON.quote(ProjectStore.identifier(name)!))" : ""
                 let values = """
                 {"projectName": \(CanonicalJSON.quote(name)), "projectID": "\(projectID)", "bundleID": "com.example.sample",
-                 "packageID": "com.example.sample", "deploymentTarget": "16.0", "architectures": \(String(decoding: architectures, as: UTF8.self)),
+                 "packageID": "com.example.sample", "deploymentTarget": "15.0", "architectures": \(String(decoding: architectures, as: UTF8.self)),
                  "templateExtensionID": "\(manifest.id)", "templateID": "\(template.id)", "templateVersion": "\(manifest.version)",
                  "templateDigest": "\(template.digest)", "toolchainID": "clt-27.0-sample", "toolchainDigest": "sha256:\(String(repeating: "1", count: 64))",
                  "sdkID": "iPhoneOS27.0-00000000", "sdkDigest": "sha256:\(String(repeating: "2", count: 64))"\(productName)}
@@ -236,7 +236,7 @@ final class ExtensionAndProjectTests: XCTestCase {
         olderToolchain.version = "14.2"
         olderToolchain.newestSDK = "16.2"
         let older = StaticEnvironmentRegistry(toolchains: [olderToolchain], sdks: [sdk("15.5")])
-        let legacy = try store.create(templateID: template, name: "Legacy Headers", values: [:], catalog: catalog, registry: older)
+        let legacy = try store.create(templateID: template, name: "Legacy Headers", values: ["deploymentTarget": .string("16.0")], catalog: catalog, registry: older)
         let warning = ProjectCheck(store: store, catalog: catalog, registry: older).run(projectID: legacy.projectID)
             .diagnostics.first { $0.code == "environment.sdk.tooOld" }
         XCTAssertEqual(warning?.severity, .warning)
