@@ -135,6 +135,21 @@ Each was fixed with a test before the results above.
    `toolchainRemove` refused them forever ("no longer installed"), since
    the folder still existed. A tree with no regular file left now counts
    as gone in both (`ToolchainService.exists`), so the record is dropped.
+10. Users reported that 0.3.6 and 0.3.7 could not unpack a toolchain, and no
+    vphone showed it: on the iOS 26.4 iPhone and iPad vphones 0.3.6 and 0.3.7
+    set up 16.4, 15.3, 15.0 and 14.2 from the console and from the Settings
+    page, a fresh iPad included, and a worker paused for 100 s while it
+    unpacked went on. The reader's `Data` crossing `@objc dynamic` thunks stays
+    in the autorelease pool on an older Foundation: 2.4 GB for CLT 27.0 and
+    5.5 GB for 16.4 on the iOS 15.5 runtime, 102 and 104 MB with the members
+    plain, and nothing on the iOS 26.4 vphone (AGENTS.md ▸ Gotchas;
+    `make old-runtime`). The same day Apple's catalog turned out to have
+    dropped 27.0 for 27.2, which left 16.4, the largest package, at the top
+    of the list; reviewed releases now keep their own address. Build 280 of
+    that fix, roothide: smoke and a whole 27.0 setup with Swift, through the
+    recorded address, on the iOS 26.4 and 27.0.1 iPhone vphones and the iOS
+    26.4 iPad vphone; `t6-toolchain-beside` on both iPhones; and the first
+    setup of a device with no toolchain or SDK on the iPad, which picked 27.0.
 
 ## The image list is never read: three kernel panics
 
@@ -183,6 +198,13 @@ console now goes on after a restart only past a successful respring.
 
 ## Still to run on the owner's devices
 
+- [ ] A toolchain unpacked on a real device (2026-11-06, Bugs ▸ 10). The fix
+      was measured on the iOS 15.5 runtime and run on iOS 26 and 27 vphones;
+      no iOS 16, 17 or 18 Foundation has run it, and which of them holds the
+      bytes is not known. On the iPhone 15 Pro on iOS 17.3.1, or better an
+      iOS 16 device: Settings ▸ Toolchains ▸ From Apple… ▸ 16.4, the largest
+      package, reaches Toolchain Ready, and the staging folder holds no
+      leftover `extracted`.
 - [ ] roothide Bootstrap (2026-11-04, issue #35, AGENTS.md ▸ Toolchains;
       the Mac harness ran, and a roothide vphone with Bootstrap's mark
       written into its root by hand, which runs ad hoc code, showed the
@@ -1414,6 +1436,37 @@ the arm64 and arm64e Swift cases, each a cold build of the SDK's modules,
 side by side; both are left for a measurement of memory first), and the
 retarget itself (1–3 s).
 
+## CLT 27.2 (2026-11-06)
+
+Apple's catalog replaced 27.0 with 27.2 (`142-50405`,
+`27.2.0.0.1792721180`, posted 2026-10-29). Against 27.0 on the Mac, without
+running a host tool: the same 51 host images and system libraries, and four
+new `libobjc` and four new `libswiftCore` imports, all in the Swift tools, which
+resolved on both systems below; the
+zippered availability check and `__libcpp_verbose_abort` still imported, so
+27.0's rename and C++ requirement carry over; `eor3` 97, `udot` 4729, `sdot` 5
+(swift-frontend only, which needs DotProd anyway) and clang's and libLTO's
+counts as they were; the A13 decoder takes every word and, unlike 27.0's, the
+reference decoder too (`compatibility-audit.json`).
+
+Through the product path, build 281, roothide, with nothing changed but the
+release's row: the iOS 26.4 iPhone vphone ran `t4-toolchain-swift` (ten
+self-test cases against SDK 27.0, the `uikit-swift` app built debug and
+release, installed and removed), the same ten against SDK 27.1 by
+`toolchainSelfTest`, and the six C cases against SDK 26.4 on a setup without
+Swift. The iOS 27.0.1 iPhone vphone ran smoke, `t6-toolchain-beside` and
+`t4-toolchain-swift`, and the iOS 26.4 iPad vphone, with no toolchain or SDK,
+picked 27.2 by itself and set it up with Swift, its SDK fetched.
+
+No problem was found, so nothing else changed. Not run: 27.2 on a real
+device, or on an A12, where as with 27.0 the C family should work without
+Clang modules and Swift is refused.
+
+CI's own packages before their tags: 0.3.8 (31) on the iOS 26.4 iPhone
+vphone, smoke and 27.0 with Swift through its recorded address; 0.3.9 (32) on
+the iOS 27.0.1 iPhone vphone, smoke, the catalog, `t6-toolchain-beside` and
+`t4-toolchain-swift`.
+
 ## Kept releases and their Swift (2026-10-21)
 
 The owner kept 27.0, 16.4, 15.3, 15.0 and 14.2 and dropped 16.2, 14.3,
@@ -1428,6 +1481,7 @@ Which Swift each kept package ships, read from Apple's own payload
 
 | CLT | Swift | swift-frontend built for | Imports macOS's zippered `_stdlib_isOSVersionAtLeastOrVariantVersion` | SHA3 / DotProd in swift-frontend |
 |---|---|---|---|---|
+| 27.2 | 6.4.2 (swiftlang-6.4.2.1.9) | not read | swift-driver, two SwiftSyntax libraries | yes / yes |
 | 27.0 | 6.4 (swiftlang-6.4.0.34.1) | macOS 14.0, SDK 16.0 | swift-driver, two SwiftSyntax libraries | yes / yes |
 | 16.4 | 6.1.2 (swiftlang-6.1.2.1.2) | macOS 14.0, SDK 15.4 | swift-driver, two SwiftSyntax libraries | 5 eor3 (4 in XXH3, 1 symbol graph) / 3,754 udot |
 | 15.3 | 5.10 (swiftlang-5.10.0.13) | macOS 13.0, SDK 14.4 | none | 2 eor3 (BLAKE3 hash_many, symbol graph) / none |
@@ -2853,3 +2907,25 @@ on the iPad:
   `reloadIfFileGrew` among them), so those calls go through the runtime.
   The selector audit of `c6a5da9`'s packages found nothing but the two
   accepted `ComposerAttachmentPreview` data source methods.
+
+## Antigravity (2026-11-04, 0.3.7)
+
+The release commit `108ba4d` built on the Mac (roothide, build 274), over
+0.3.6 on the iOS 26.4 iPhone vphone:
+
+- The smoke suite (`hello`, `terminal`, `files`, `logs`, `diagnostics`,
+  `i3-image-check-refused`, `i1-smoke`) and `accounts` passed, the latter
+  with its Antigravity steps: the sign-in's page is Google's
+  `accounts.google.com/o/oauth2/v2/auth` with Antigravity's client, a
+  pasted address with no code is refused, and the cancel ends it
+  `cancelled`.
+- Settings ▸ Model Providers lists Antigravity after Cursor with its mark.
+  Its page says "Sign in with the Google account you use for Antigravity."
+  and opens the system's sign-in browser on Google's "Sign in to continue
+  to Google Antigravity"; closing it leaves the page on Continue, signed in
+  to nothing.
+- A message to the device's existing OpenAI-compatible sign-in
+  (deepseek-v4-pro) was answered.
+
+No Google account has signed in: the Antigravity entry under Still to run
+stands.

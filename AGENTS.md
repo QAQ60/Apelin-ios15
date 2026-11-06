@@ -267,8 +267,13 @@ the same executable in session mode; the workers are its children.
   category method could take a system selector), an `async` method (Swift
   calls an `@objc dynamic` one through its completion-handler thunk in a new
   task, so the caller's cancellation and task-locals stop reaching the body),
-  and a stored buffer grown by appends in place (each access through the
-  runtime copies it). No selector takes a name the runtime, ARC or UIKit calls
+  a stored buffer grown by appends in place (each access through the
+  runtime copies it), and anything with `Data` in its signature, closures
+  included: on an older iOS the bridge back to `Data` leaves an object in the
+  autorelease pool that holds the bytes until the pool drains, which took
+  unpacking a toolchain to 5.5 GB (Gotchas ▸ `Data` through an `@objc`
+  thunk). `make check` runs `Scripts/check-objc-data.py`, and no comment
+  passes it. No selector takes a name the runtime, ARC or UIKit calls
   by itself: `load`, `initialize`, `alloc`, `new`, `copy`, `mutableCopy`,
   `dealloc`, `retain`, `release`, `autorelease`, `class`, `self`, `hash`,
   `isEqual:`, `zone`, `description` that is not an override,
@@ -1000,14 +1005,22 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   the package over twice; a task that ended without installing, or is gone,
   is submitted afresh.
   Setup takes the CLT releases `CommandLineToolsSupport.releases` lists —
-  27.0, 16.4, 15.3, 15.0 and 14.2 (owner, 2026-10-21; each set up and
-  self-tested on a device) — and refuses any other, before downloading,
+  27.2, 27.0, 16.4, 15.3, 15.0 and 14.2 (owner, 2026-10-21, 27.2 on
+  2026-11-06; each set up and self-tested on a device) — and refuses any other, before downloading,
   with the catalog's `unsupportedReason`: 12.4 for its arm64e C++, and
   16.2, 14.3, 13.4, 13.2 and 12.5, which passed but were dropped, as
   releases Apelin no longer sets up. `toolchainCatalog` lists only the kept
   releases (a product Apple lists that Apelin has not reviewed is left
   out, `ToolchainProduct.reviewed`); a kept one this device cannot run
-  stays, with its reason.
+  stays, with its reason. Each kept release records its package
+  (`CommandLineToolsPackage`: product, SHA-256, address, size, the digest
+  of its table of contents) and is offered from there when Apple's catalog
+  no longer names it (2026-11-06: Apple replaced 27.0 with 27.2 and went on
+  serving 27.0's file, and it left every device's list). The catalog's own
+  entry wins, and the bytes are checked the same either way.
+  `.github/workflows/apple-catalog.yml` reads the catalog every day
+  (`Scripts/check-apple-catalog.py`) and files one issue when a reviewed
+  package can no longer be downloaded or a new release waits for a review.
   roothide Bootstrap, the TrollStore one, runs none of them (issue #35;
   `HostSigning` in ApelinCore): it trust-caches nothing it installs and
   runs only a Mach-O carrying the CoreTrust-bypass signature its dpkg
@@ -1040,8 +1053,8 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   iOS 17.3.1+, LRCPC), 15.0 (Swift 5.9) and 15.3 (Swift 5.10), both iOS
   17.3.1+ and LRCPC — swift-frontend's two SHA3 sites, BLAKE3 hash_many and
   the symbol-graph edge set, are off Apelin's build path, and an A12Z ran
-  every Swift case of both —, and 27.0 (Swift 6.4, iOS 26+,
-  LRCPC/SHA3/DotProd). 16.4 ships Swift 6.1.2 and does not offer it
+  every Swift case of both —, and 27.0 and 27.2 (Swift 6.4 and 6.4.2, iOS
+  26+, LRCPC/SHA3/DotProd). 16.4 ships Swift 6.1.2 and does not offer it
   (`swiftUnavailable`): its swift-driver imports macOS's zippered
   availability check, which no iOS runtime exports (dyld stops it on iOS
   17.3.1 and iPadOS 26.0.1), the 27.0 rename is right only from iOS 26,
@@ -1068,15 +1081,16 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   `ReleaseCompatibility` turns that table into the `compatibility` snapshot
   returned in `toolchainCatalog`, stored in the toolchain manifest and
   `ToolchainRecord`, and read by the build worker. Older records still decode.
-  CLT 16.4 and 27.0 also record their required C++ runtime symbol,
+  CLT 16.4, 27.0 and 27.2 also record their required C++ runtime symbol,
   `std::__1::__libcpp_verbose_abort`. Catalog, setup and project checks look
   for the symbol in the fixed system C++ library before any tool is run,
   rather than guessing an OS floor from SDK versions.
   SDK imports do not consult it: a valid SDK may be stored without a compatible
   toolchain. Setup prefers the recommended SDK when available, then falls back
   to the newest compatible one. Legacy Swift's 17.3.1 bound is explicitly a
-  verified-host policy, not an instruction-set requirement; CLT 27.0's 26.0
-  bound follows the semantics of its retargeted OS-version query. CPU features
+  verified-host policy, not an instruction-set requirement; the 26.0 bound of
+  CLT 27.0 and 27.2 follows the semantics of their retargeted OS-version
+  query. CPU features
   are evaluated independently. `cpuProfiles` covers A9/A9X and A10/A10X iPads,
   A11 iPhones, A12/A12X/A12Z, A13 and later, and M-series iPads, for explanation
   only; the kernel's feature flags remain the decision source. Static inventory
@@ -3327,6 +3341,10 @@ manifest.json            the owngoal-packages entry
   every worker typechecked for macOS. Run this first. `SWIFTPM_SCRATCH`
   moves the package's build directory (default `Packages/ApelinKit/.build`).
 - `make check` — project and packaging validation, including the floor greps.
+- `make old-runtime` — on Apple's iOS 15.5 runtime, unbooted: what one call
+  through an `@objc` thunk leaves behind, by bridged type, and the real
+  extractor over a real package, under 512 MB (`Scripts/old-runtime/`). CI
+  runs it, so no tag ships without it. The first run downloads 5.4 GB.
 - `make format` — `swiftformat` over the repository, for Swift 6.2, as
   `.swiftformat` configures it: Runestone, `Apelind/Vendor`, the
   development templates (their digests are pinned) and `EmbeddedSchemas.swift`
@@ -3406,6 +3424,8 @@ anything else.
 ## Where things get tested
 
 The Mac harness first (`make harness`: host tests on the Mac, no simulator);
+`make old-runtime` for anything that runs long loops over files or bridges to
+Objective-C, since the Mac and the vphones cannot show an older Foundation;
 then a vphone for the app and everything visual — `make vphone-app
 VPHONE=Banana` for the iPad, `VPHONE=Date` for the iPhone, screenshots by
 `Scripts/device.py screenshot` —, `make vphone` and `make device-test` for
@@ -3514,6 +3534,24 @@ adding a dated record beside it.
   refuses a slice like that at its link (`DyldInfo.dropsPointerSignatures`
   in ApelinMachO); a symbol left to load time is named with
   `-Wl,-U,_symbol`, which every release links signed.
+- **`Data` through an `@objc` thunk.** 0.3.6 made every member of our classes
+  `@objc dynamic`, the toolchain's reader and decoder among them, and users'
+  devices could no longer unpack a toolchain; the iOS 26 and 27 vphones and
+  the Mac never noticed. A Swift call to such a member goes through
+  `objc_msgSend`, `Data` crosses as `NSData` both ways, and an older
+  Foundation bridging it back leaves an object in the autorelease pool, 48
+  bytes returned and 64 passed, that keeps the whole buffer alive. Extraction
+  is one long synchronous job on a worker thread, whose pool never drains, so
+  everything it read stayed: on the iOS 15.5 runtime 2.4 GB for CLT 27.0 and
+  5.5 GB for 16.4, against 100 MB before, more than an iPhone gives a process.
+  `String`, `[UInt8]`, `URL`, `Date`, `Set`, dictionaries, `UUID`
+  and `NSData` itself leave nothing, so the rule is about `Data` alone.
+  Measuring it took a program built for the simulator and run against the
+  runtime's libraries with `DYLD_ROOT_PATH`, booting nothing; a whole setup
+  passing on a vphone proves nothing here, where the same call leaves 0 bytes.
+  Which iOS between 15.5 and 26 stops doing it is not known. The floor is older
+  than anything the vphones run, and this is the second time that mattered,
+  after swift-nio below.
 - **A long chat opened in its middle.** `use(_:)` asked for the opening
   scroll, then restored the composer's draft, whose height update lays the
   whole window out (`doWithAnimation`), before the new list had its rows.
