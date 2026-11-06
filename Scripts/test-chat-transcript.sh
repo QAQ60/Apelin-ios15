@@ -1,9 +1,11 @@
 #!/bin/bash
 # Compile the app's event-to-transcript reducer, how it reads past a reopened
-# session's replay, how it adopts the conversations agents open, how far it
+# session's replay and takes from it the approvals its stopped task left,
+# how it adopts the conversations agents open, how far it
 # follows a turn, how the trace sheet lists a summary's steps, how dropped
 # messages go back to the composer, which conversations a deleted project
-# takes with it, which tool results are builds the star prompt counts and
+# takes with it, what a rootless app's data container gives back, which
+# tool results are builds the star prompt counts and
 # how often it asks, the order the sidebar lists conversations in, which
 # projects the project menu lists at its top, which conversations offer
 # Delete and when it asks first, which replies leave a conversation
@@ -32,6 +34,7 @@ sources=(
     "$root/Apelin/Interface/Chats/ChatAdoption.swift"
     "$root/Apelin/Interface/Chats/DroppedMessages.swift"
     "$root/Apelin/Interface/Chats/DeletedProjects.swift"
+    "$root/Apelin/Application/ContainerDataFolder.swift"
     "$root/Apelin/Interface/Chats/ChatDeletion.swift"
     "$root/Apelin/Interface/Chats/TurnFollowing.swift"
     "$root/Apelin/Interface/Root/SidebarOrder.swift"
@@ -43,8 +46,10 @@ sources=(
     "$root/Tests/ChatTranscript/ToolCallDetailCheck.swift"
     "$root/Tests/ChatTranscript/TraceStepCheck.swift"
     "$root/Tests/ChatTranscript/ReplayEndCheck.swift"
+    "$root/Tests/ChatTranscript/AbandonedApprovalCheck.swift"
     "$root/Tests/ChatTranscript/DroppedMessagesCheck.swift"
     "$root/Tests/ChatTranscript/DeletedProjectsCheck.swift"
+    "$root/Tests/ChatTranscript/ContainerDataFolderCheck.swift"
     "$root/Tests/ChatTranscript/CompletedBuildsCheck.swift"
     "$root/Tests/ChatTranscript/StarPromptStateCheck.swift"
     "$root/Tests/ChatTranscript/SidebarOrderCheck.swift"

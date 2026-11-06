@@ -9,46 +9,46 @@ import UniformTypeIdentifiers
 final class ChatRuntime {
     /// The window's runtime, which names a conversation's journal in
     /// Settings ▸ Logs however Settings was opened.
-    static weak var active: ChatRuntime?
+    weak static var active: ChatRuntime?
 
-    var onChange: (() -> Void)?
+    @objc dynamic var onChange: (() -> Void)?
     /// The saved conversations could not be read.
-    var onError: ((Error) -> Void)?
+    @objc dynamic var onError: ((Error) -> Void)?
     /// A conversation could not be written; it goes on in memory and is
     /// written again with the next save that gets through.
-    var onSaveFailure: ((Error) -> Void)?
+    @objc dynamic var onSaveFailure: ((Error) -> Void)?
     /// A save got through after one had failed.
-    var onSaveRecovered: (() -> Void)?
+    @objc dynamic var onSaveRecovered: (() -> Void)?
     /// A conversation's draft was put back from outside the composer.
-    var onDraftRestored: ((UUID) -> Void)?
+    @objc dynamic var onDraftRestored: ((UUID) -> Void)?
     /// Queued messages a stopped run never took went back to a
     /// conversation's composer, which the reader has yet to be told.
     var onUnsentReturned: ((UUID, DroppedMessages.Returned) -> Void)?
     /// Builds an agent ran completed, counted once each from the events a
     /// conversation had not read before (`CompletedBuilds`).
-    var onBuildsCompleted: ((Int) -> Void)?
-    private(set) var isLoaded = false
+    @objc dynamic var onBuildsCompleted: ((Int) -> Void)?
+    @objc dynamic private(set) var isLoaded = false
     /// The saved conversations have been checked against the host's live
     /// sessions once: what says working is working.
-    private(set) var isReconciled = false
+    @objc dynamic private(set) var isReconciled = false
     private(set) var records: [UUID: ChatRecord] = [:]
     private let store = ChatStore(folder: .app)
-    private var revision = 0
+    @objc dynamic private var revision = 0
     private var readers: [UUID: Task<Void, Never>] = [:]
     private var opening: [UUID: Task<AgentOpenResponse, Error>] = [:]
     private var attachmentCache: [String: ComposerAttachment] = [:]
     private var transcripts = ChatTranscriptCache()
     /// Conversations whose latest state is in memory only.
-    private var unsaved: Set<UUID> = []
+    @objc dynamic private var unsaved: Set<UUID> = []
     /// Conversations being written, and those changed again meanwhile. A
     /// conversation is written once at a time and then once more with what
     /// it holds by then, so one that streams faster than it can be written
     /// queues no save, nor a copy of its whole history, per batch.
-    private var saving: Set<UUID> = []
-    private var savesPending: Set<UUID> = []
+    @objc dynamic private var saving: Set<UUID> = []
+    @objc dynamic private var savesPending: Set<UUID> = []
     /// Pending saves that go as soon as the write under way ends: a turn
     /// began or ended, or the reader changed something.
-    private var savesUrgent: Set<UUID> = []
+    @objc dynamic private var savesUrgent: Set<UUID> = []
     /// When each conversation's last write ended. A streamed or typed
     /// change waits until `saveInterval` after it, so a long history is
     /// written at most once in that time, and a write that took longer
@@ -70,7 +70,7 @@ final class ChatRuntime {
     /// none (`RootInterfaceController.syncViewedChat`). A reply that comes
     /// while another is looked at, or none, leaves it unread; looking at
     /// one reads it (`ChatUnread`).
-    var viewedChat: UUID? {
+    @objc dynamic var viewedChat: UUID? {
         didSet {
             guard let viewedChat, viewedChat != oldValue, records[viewedChat]?.summary.markRead() == true else { return }
             changed(viewedChat)
@@ -79,9 +79,16 @@ final class ChatRuntime {
 
     /// Reads every saved conversation. An untouched one left by an earlier
     /// launch is dropped, unless it is `selected`, the one to show again.
+    /// A folder that cannot be read leaves no saved conversation, says
+    /// so, and still lets the reader start one: the list is loaded, empty
+    /// (issue #33).
     func load(keeping selected: UUID?) async {
         do {
-            for var record in try await store.load() {
+            let loaded = try await store.load()
+            for (name, error) in loaded.unreadable {
+                ConversationJournal.unreadable(name, error)
+            }
+            for var record in loaded.records {
                 let unsent = record.sending != nil
                 record.reclaimUnsent()
                 records[record.summary.id] = record
@@ -89,38 +96,40 @@ final class ChatRuntime {
                     persist(record.summary.id, urgent: true)
                 }
             }
-            for record in records.values where isUntouched(record) && record.summary.id != selected {
-                try? await removeRecord(record.summary.id)
-                if record.summary.projectName == nil {
-                    // the folder the menu's Open in iGhostVT or Fila made, if
-                    // it was left empty; rmdir takes nothing else
-                    rmdir(DataFolder.app.root.appendingPathComponent("Temporary/" + record.summary.id.uuidString).path)
-                }
+        } catch {
+            onError?(error)
+        }
+        for record in records.values where isUntouched(record) && record.summary.id != selected {
+            try? await removeRecord(record.summary.id)
+            if record.summary.projectName == nil {
+                // the folder the menu's Open in iGhostVT or Fila made, if
+                // it was left empty; rmdir takes nothing else
+                rmdir(DataFolder.app.root.appendingPathComponent("Temporary/" + record.summary.id.uuidString).path)
             }
-            // a project deleted while the app was away
-            await forget(DeletedProjects.gone(from: summaries, listed: DeletedProjects.listing(in: .app)))
-            isLoaded = true
-            onChange?()
-            // A host that does not answer yet is not an error, and runs
-            // nothing this app could follow: every saved row stops working.
-            let live = await (try? ApelinService.app.agentList().sessions) ?? []
-            for record in records.values {
-                if let session = live.first(where: { $0.sessionID == record.sessionID }) {
-                    records[record.summary.id]?.reopen(as: session.task)
-                    follow(record.summary.id, task: session.task)
-                } else if record.summary.isWorking {
-                    records[record.summary.id]?.summary.isWorking = false
-                    changed(record.summary.id)
-                }
+        }
+        // a project deleted while the app was away
+        await forget(DeletedProjects.gone(from: summaries, in: .app))
+        isLoaded = true
+        onChange?()
+        // A host that does not answer yet is not an error, and runs
+        // nothing this app could follow: every saved row stops working.
+        let live = await (try? ApelinService.app.agentList().sessions) ?? []
+        for record in records.values {
+            if let session = live.first(where: { $0.sessionID == record.sessionID }) {
+                records[record.summary.id]?.reopen(as: session.task)
+                follow(record.summary.id, task: session.task)
+            } else if record.summary.isWorking {
+                records[record.summary.id]?.summary.isWorking = false
+                changed(record.summary.id)
             }
-            isReconciled = true
-            onChange?()
-            // What agents opened while the app was not following their
-            // openers; the list is oldest first, so an opener comes first.
-            for session in live {
-                adopt(ChatAdoption.record(session: session, records: Array(records.values)))
-            }
-        } catch { onError?(error) }
+        }
+        isReconciled = true
+        onChange?()
+        // What agents opened while the app was not following their
+        // openers; the list is oldest first, so an opener comes first.
+        for session in live {
+            adopt(ChatAdoption.record(session: session, records: Array(records.values)))
+        }
     }
 
     /// Lists and follows a conversation an agent opened, leaving the
@@ -168,14 +177,14 @@ final class ChatRuntime {
         persist(id)
     }
 
-    func togglePin(_ id: UUID) {
+    @objc dynamic func togglePin(_ id: UUID) {
         records[id]?.summary.isPinned.toggle()
         changed(id)
     }
 
     /// `name` as the conversation's title from now on: the agent's titles
     /// no longer replace it (`ChatSummary.rename(to:)`).
-    func rename(_ id: UUID, to name: String) {
+    @objc dynamic func rename(_ id: UUID, to name: String) {
         guard records[id]?.summary.rename(to: name) == true else { return }
         changed(id)
     }
@@ -217,7 +226,7 @@ final class ChatRuntime {
     @discardableResult
     func forgetDeletedProjects() async -> Set<String> {
         guard isLoaded else { return [] }
-        let gone = DeletedProjects.gone(from: summaries, listed: DeletedProjects.listing(in: .app))
+        let gone = DeletedProjects.gone(from: summaries, in: .app)
         guard !gone.conversations.isEmpty else { return [] }
         await forget(gone)
         onChange?()
@@ -284,7 +293,7 @@ final class ChatRuntime {
 
     /// The title of the conversation `sessionID` is, which names a message
     /// its agent sent, and its journal in Settings ▸ Logs.
-    func title(ofSession sessionID: String) -> String? {
+    @objc dynamic func title(ofSession sessionID: String) -> String? {
         records.values.first { $0.sessionID == sessionID }?.summary.displayTitle
     }
 
@@ -427,7 +436,7 @@ final class ChatRuntime {
 
     /// Between runs only: a session to compact, nothing running, waiting
     /// for an approval or on its way to the host.
-    func canCompact(_ id: UUID) -> Bool {
+    @objc dynamic func canCompact(_ id: UUID) -> Bool {
         guard let record = records[id] else { return false }
         return record.sessionID != nil && !record.summary.isWorking && (record.sending ?? []).isEmpty
             && opening[id] == nil && compactions[id] == nil
@@ -542,6 +551,7 @@ final class ChatRuntime {
                         }
                     }
                     let dropped = fresh.filter { $0.kind == "queueDropped" }
+                        // persisted-read: one event's field, nothing written back from it
                         .flatMap { (try? $0.payload?["ids"]?.decode([UUID].self)) ?? [] }
                     if !dropped.isEmpty {
                         restoreDropped(Set(dropped), in: id)
@@ -620,6 +630,7 @@ final class ChatRuntime {
         guard let draftID = records[id]?.draft.id,
               let echoed = records[id]?.takeEchoed(by: events) else { return }
         for (draft, event) in echoed {
+            // persisted-read: one event's field, nothing written back from it
             let saved = (try? event.payload?["attachments"]?.decode([AgentAttachment].self)) ?? []
             guard saved.count == draft.attachments.count else { continue }
             for (item, local) in zip(saved, draft.attachments) {
@@ -635,7 +646,7 @@ final class ChatRuntime {
 
     /// What a stopped run never took goes back to the composer, ahead of
     /// what was typed since (`DroppedMessages`).
-    private func restoreDropped(_ messages: Set<UUID>, in id: UUID) {
+    @objc dynamic private func restoreDropped(_ messages: Set<UUID>, in id: UUID) {
         guard let events = records[id]?.events, let draft = records[id]?.draft,
               let returned = DroppedMessages.returning(messages, from: events, to: draft, attachment: {
                   attachment($0, in: id)
@@ -647,14 +658,14 @@ final class ChatRuntime {
     }
 
     /// `urgent`: written at once rather than after the interval; see `persist`.
-    private func changed(_ id: UUID, urgent: Bool = true) {
+    @objc dynamic private func changed(_ id: UUID, urgent: Bool = true) {
         persist(id, urgent: urgent); onChange?()
     }
 
     /// Writes `id`, atomically and off the main thread (`ChatStore`). An
     /// `urgent` save goes now, or as soon as the write under way ends; any
     /// other waits until `saveInterval` after the last write ended.
-    private func persist(_ id: UUID, urgent: Bool = false) {
+    @objc dynamic private func persist(_ id: UUID, urgent: Bool = false) {
         guard records[id] != nil else {
             unsaved.remove(id)
             savesDeferred.removeValue(forKey: id)?.cancel()
@@ -687,7 +698,7 @@ final class ChatRuntime {
     /// Writes every conversation whose save is waiting for its interval,
     /// before the app is suspended; `drained` is called once none is being
     /// written.
-    func saveNow(drained: @escaping () -> Void) {
+    @objc dynamic func saveNow(drained: @escaping () -> Void) {
         for id in Set(savesDeferred.keys).union(savesPending) {
             persist(id, urgent: true)
         }
@@ -695,14 +706,14 @@ final class ChatRuntime {
         drainSaves()
     }
 
-    private func drainSaves() {
+    @objc dynamic private func drainSaves() {
         guard saving.isEmpty else { return }
         let drained = savesDrained
         savesDrained = []
         drained.forEach { $0() }
     }
 
-    private func write(_ id: UUID) {
+    @objc dynamic private func write(_ id: UUID) {
         guard let record = records[id] else {
             unsaved.remove(id)
             return
@@ -723,7 +734,7 @@ final class ChatRuntime {
     }
 
     /// Writes what changed while `id` was being written.
-    private func saveEnded(_ id: UUID) {
+    @objc dynamic private func saveEnded(_ id: UUID) {
         saving.remove(id)
         savedAt[id] = Date()
         if savesPending.remove(id) != nil {
@@ -733,19 +744,19 @@ final class ChatRuntime {
     }
 
     /// Writes again every conversation a failed save left in memory only.
-    func retryUnsaved() {
+    @objc dynamic func retryUnsaved() {
         for id in unsaved {
             persist(id, urgent: true)
         }
     }
 
-    private func saved(_ id: UUID) {
+    @objc dynamic private func saved(_ id: UUID) {
         guard unsaved.remove(id) != nil else { return }
         onSaveRecovered?()
         retryUnsaved()
     }
 
-    private func imageMIME(_ data: Data) -> String {
+    @objc dynamic private func imageMIME(_ data: Data) -> String {
         data.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? "image/png" : "image/jpeg"
     }
 }

@@ -26,6 +26,13 @@ struct ChatRecord: Codable, Sendable {
 /// also ends where the task does, when the task stops before getting that
 /// far: its worker died, the host stopped, or a second open of the session
 /// failed.
+///
+/// One thing in it is new: the resolution of each approval an earlier task
+/// left waiting, which the reopened worker writes (deny, "the session
+/// restarted") before anything new. That task has ended, so the approval
+/// can never be answered; read past, its card stood in for the composer on
+/// every later turn, and neither Approve nor Deny could take it away
+/// (issue #38). `take` keeps it and goes on reading past the rest.
 struct SessionReplay: Codable, Sendable {
     private static let userMessageKinds: Set<String> = ["prompt", "steer"]
     private static let compactionKind = "compactionStarted"
@@ -39,17 +46,39 @@ struct SessionReplay: Codable, Sendable {
     /// The compactions still to come again. Absent from older files, which
     /// have none.
     private var compactions: Int?
+    /// The approvals the history asked and never saw resolved. Absent from
+    /// older files, which take none.
+    private var waitingApprovals: Set<String>?
 
     /// The replay of a session whose history is `events`.
     init(of events: [TaskEvent]) {
-        for event in events where Self.userMessageKinds.contains(event.kind) {
-            if let id = ChatTranscript.userMessageID(of: event) {
-                messageIDs.insert(id)
-            } else {
-                unnamedMessages += 1
+        var waiting: Set<String> = []
+        for event in events {
+            if Self.userMessageKinds.contains(event.kind) {
+                if let id = ChatTranscript.userMessageID(of: event) {
+                    messageIDs.insert(id)
+                } else {
+                    unnamedMessages += 1
+                }
+            } else if let approval = Self.approvalID(event, kind: "approvalRequested") {
+                waiting.insert(approval)
+            } else if let approval = Self.approvalID(event, kind: "approvalResolved") {
+                waiting.remove(approval)
             }
         }
         compactions = events.count { $0.kind == Self.compactionKind }
+        waitingApprovals = waiting
+    }
+
+    /// Whether `event` resolves an approval the history left waiting, which
+    /// the conversation has not seen: once for each.
+    mutating func resolvesWaitingApproval(_ event: TaskEvent) -> Bool {
+        guard let approval = Self.approvalID(event, kind: "approvalResolved") else { return false }
+        return waitingApprovals?.remove(approval) != nil
+    }
+
+    private static func approvalID(_ event: TaskEvent, kind: String) -> String? {
+        event.kind == kind ? event.payload?["approvalID"]?.stringValue : nil
     }
 
     /// Whether `event` is still part of the replay, counting off the user
@@ -143,24 +172,29 @@ extension ChatRecord {
     }
 
     /// Adds the events of `batch` past the cursor, less a reopened task's
-    /// replay, and returns them.
+    /// replay, and returns them. Of the replay, only the resolutions of
+    /// approvals the history left waiting are added (`SessionReplay`).
     mutating func take(_ batch: [TaskEvent]) -> [TaskEvent] {
         let fresh = batch.filter { $0.seq > cursor }
         guard var replay else {
             events += fresh
             return fresh
         }
+        var resolved: [TaskEvent] = []
         for (index, event) in fresh.enumerated() {
-            guard replay.replays(event) else {
+            if replay.resolvesWaitingApproval(event) {
+                resolved.append(event)
+            } else if !replay.replays(event) {
                 self.replay = nil
-                let taken = Array(fresh[index...])
+                let taken = resolved + fresh[index...]
                 events += taken
                 return taken
             }
             replay.cursor = event.seq
         }
         self.replay = replay
-        return []
+        events += resolved
+        return resolved
     }
 
     /// Where the end of the finished task `batch` answered for is, when this
@@ -217,19 +251,74 @@ actor ChatStore {
         self.folder = folder
     }
 
-    func load() throws -> [ChatRecord] {
+    /// What `load` read, and the files that did not decode: each one moved
+    /// into `Chats/Unreadable/` with why, so one file that does not decode — cut
+    /// short, or written by another version — never takes every other
+    /// conversation with it on each launch (issue #33), and is kept rather
+    /// than overwritten.
+    struct Loaded {
+        var records: [ChatRecord] = []
+        var unreadable: [(name: String, error: any Error)] = []
+    }
+
+    func load() throws -> Loaded {
         let directory = folder.root.appendingPathComponent("Chats")
         try folder.makeLevels(to: directory)
         guard let directoryPath = CanonicalPath.resolve(directory.path) else { throw CocoaError(.fileReadNoSuchFile) }
-        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard UUID(uuidString: url.deletingPathExtension().lastPathComponent) != nil,
-                      let path = CanonicalPath.resolve(url.path),
-                      CanonicalPath.isCanonical(path, inside: directoryPath)
-                else { return nil }
-                return try JSONDecoder().decode(ChatRecord.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        restoreReadable(in: directory)
+        var loaded = Loaded()
+        for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            where url.pathExtension == "json"
+        {
+            guard UUID(uuidString: url.deletingPathExtension().lastPathComponent) != nil,
+                  let path = CanonicalPath.resolve(url.path),
+                  CanonicalPath.isCanonical(path, inside: directoryPath)
+            else { continue }
+            // A file that cannot be opened now (before the first unlock, say)
+            // is only skipped: it is read again next launch, never moved.
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { continue }
+            do {
+                try loaded.records.append(JSONDecoder().decode(ChatRecord.self, from: data))
+            } catch {
+                loaded.unreadable.append((url.lastPathComponent, error))
+                setAside(url, in: directory)
             }
+        }
+        return loaded
+    }
+
+    /// Puts back a conversation set aside earlier that decodes now — one a
+    /// newer version wrote, back after an upgrade — unless its place has
+    /// been taken since.
+    private func restoreReadable(in directory: URL) {
+        let aside = directory.appendingPathComponent("Unreadable", isDirectory: true)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: aside.path) else { return }
+        for name in names where name.hasSuffix(".json") {
+            guard let id = UUID(uuidString: String(name.prefix(36))) else { continue }
+            let source = aside.appendingPathComponent(name)
+            let destination = directory.appendingPathComponent(id.uuidString + ".json")
+            guard !FileManager.default.fileExists(atPath: destination.path),
+                  let data = try? Data(contentsOf: source),
+                  (try? JSONDecoder().decode(ChatRecord.self, from: data)) != nil
+            else { continue }
+            rename(source.path, destination.path)
+        }
+    }
+
+    /// Moves an unreadable conversation out of the way, under a name no
+    /// other file there has. When that fails it stays, and is read past
+    /// again next time.
+    private func setAside(_ url: URL, in directory: URL) {
+        let aside = directory.appendingPathComponent("Unreadable", isDirectory: true)
+        guard (try? folder.makeLevels(to: aside)) != nil else { return }
+        let stem = url.deletingPathExtension().lastPathComponent + "-\(Int(Date().timeIntervalSince1970))"
+        var destination = aside.appendingPathComponent(stem + ".json")
+        var attempt = 1
+        while FileManager.default.fileExists(atPath: destination.path) {
+            attempt += 1
+            destination = aside.appendingPathComponent("\(stem)-\(attempt).json")
+        }
+        rename(url.path, destination.path)
     }
 
     func save(_ record: ChatRecord, revision: Int) throws {

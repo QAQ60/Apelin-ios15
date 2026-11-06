@@ -69,10 +69,10 @@ the same executable in session mode; the workers are its children.
   reads as a crash. Quit, and any other exit the app chooses, is
   `QuietExit.run`: leave for the home screen, wait for the animation, run the
   cleanup `exit` would skip, then exit.
-- **The app's data folder is `~/Documents/wiki.qaq.apelin`, and the package
-  makes it.** The app has no container, so its home is mobile's —
-  `<jbroot>/var/mobile` on roothide, `/var/mobile` on rootless — shared with
-  every other app without one. Anything it keeps there goes in a folder named
+- **The app's data folder is `~/Documents/wiki.qaq.apelin` in mobile's
+  home, and the package makes it.** Mobile's home is `<jbroot>/var/mobile`
+  on roothide and `/var/mobile` on rootless, shared with every app without
+  a container. Anything the app keeps there goes in a folder named
   for its bundle id, the isolation a container would give, inside a
   `Documents` mobile owns, which a container would have had too. The postinst
   (dpkg, as root) makes each missing level — home, `Documents`, the folder —
@@ -80,7 +80,31 @@ the same executable in session mode; the workers are its children.
   never follows a symlink. Never `mkdir -p` as root: it leaves every level
   above the last one root's, and Irisin 4.3.4–4.5.25 left a roothide
   bootstrap's `Documents` root's that way, so no other app without a
-  container could make anything there.
+  container could make anything there. The app reckons mobile's home off
+  its own bundle's path, as the session host does off its own
+  (`RoothideRoot.mobileHome`), never from `NSHomeDirectory()`: on roothide
+  that is the system's `/var/mobile`, and on rootless uicache and Irisin's
+  registration (IcliKit's) give an app without `no-container` a data
+  container and make it the app's home. The app's preferences, saved state
+  and `tmp` live in that container; its data never does. 0.3.5 and earlier
+  kept the data folder there on rootless — no project listed, no project
+  link opened, every project's conversations taken at each launch for a
+  deleted project's (#37) — so at launch, before anything reads the data
+  folder, `ContainerDataFolder` moves `<container>/Documents/wiki.qaq.apelin`
+  into mobile's (rootless only, and only while the two differ). Each
+  regular file goes to the same path by a rename, never copied or deleted;
+  where mobile's has a file of that name, the newer by modification time
+  stays there and the older goes aside, by `RENAME_SWAP` when the
+  container's is the newer; memories merge by ID through `MemoryStore`,
+  mobile's text winning. A link on either side, a special file, a clash
+  with a folder or a link, and `console/running/` (it would run again)
+  stay put; a folder is made in mobile's only for a file that lands in it,
+  never through a link. The container's folder is then renamed
+  `wiki.qaq.apelin.migrated` (a stamp after it when that is taken), keeping
+  what stayed and every older copy, so a later launch finds nothing to do;
+  the journal lists each path. Preferences need nothing: they stay in the
+  container, where the app still reads them. Tested by
+  `Tests/ChatTranscript/ContainerDataFolderCheck.swift`.
 - **A cold launch starts with no saved scenes.** `main.swift` deletes this
   bundle's `Library/Saved Application State/<id>.savedState` before
   `UIApplicationMain`. UIKit reads that archive before any scene delegate
@@ -162,6 +186,29 @@ the same executable in session mode; the workers are its children.
   `@PREFIX@/…`, a system one `@ROOTFS@/…` (the packager writes `/rootfs` for
   roothide, nothing for rootless). `Scripts/check-launchd-paths.py` fails
   `make check` on a bare one; a plist without such keys needs neither.
+- **One saved entry that does not read never costs the others.** A list
+  kept on disk and written back is read one element at a time
+  (`PreservedList` in ApelinCore: what does not decode is kept and written
+  back as it was), a folder of records is read per file, and a file that
+  does not read at all is set aside (`UnreadableFile.setAside`) — never
+  replaced by an empty state the next save makes permanent, and never a
+  reason to delete what the record named (the SDK sweep counts every record
+  file, readable or not). `make check` runs `Scripts/check-persisted-reads.py`,
+  which fails on a bare `try` read inside a `map`/`compactMap`/`flatMap`/
+  `forEach` walk and on a `try?` decode that falls back to `[]`, `[:]` or an
+  empty value; `// persisted-read: <why>` on or above the line passes data
+  that is never written back. Issue #33 lost every chat to one cut-short
+  file; the audit after it found the toolchain registry, the SDK sweep, the
+  artifact registry, the approval ledger, the git credential list, the
+  symbol index and the notice marks the same way.
+- **No absolute path under the bootstrap root outlives the boot.** roothide
+  renames `.jbroot-<id>` on a reboot. A path a record keeps is taken
+  through `BootstrapRootPath.rebased` (only the root's name changes, so two
+  readers get the same string) wherever it is read — toolchain and SDK
+  records, the host's and the build's artifact records —, and a name made
+  from a path (a backup's key) is made from the part below the root
+  (`BootstrapRootPath.belowRoot`). A new record with a path takes the same
+  care, or keeps the path relative (issue #34).
 - **Versions and the deployment target live in `Configuration/*.xcconfig`
   only.** `make check` rejects either in `project.pbxproj`.
 - **No project generators.** `project.pbxproj` is hand-written; `objectVersion`
@@ -205,6 +252,43 @@ the same executable in session mode; the workers are its children.
   candidate. Pass every target's sources. `--delete-orphans` is opt-in and is
   for a single-target app only: with a root missing it takes live strings and
   all of their translations out in one commit.
+- **Apelin's own classes are open to hooks** (owner, 2026-11-04). Every
+  `func`, `var` and `subscript` of a class this repository declares, or of an
+  extension of one, is `@objc dynamic`, statics and private ones included,
+  wherever Objective-C can represent it, so a tweak that replaces it with
+  `MSHookMessageEx` or `method_setImplementation` is reached from Swift's own
+  calls too: `@objc` alone lets Swift call the body directly, and only
+  `dynamic` sends those calls through `objc_msgSend`. An override of our own
+  member in a `final` class takes `dynamic` as well; an override of an Apple or
+  third-party method is reached that way already and takes nothing. Left
+  plain: structs, enums, actors, protocols, generic classes, `let`s,
+  initializers, property-wrapped and `@Observable` members, a signature
+  Objective-C cannot represent, an extension of a type we do not own (its
+  category method could take a system selector), an `async` method (Swift
+  calls an `@objc dynamic` one through its completion-handler thunk in a new
+  task, so the caller's cancellation and task-locals stop reaching the body),
+  and a stored buffer grown by appends in place (each access through the
+  runtime copies it). No selector takes a name the runtime, ARC or UIKit calls
+  by itself: `load`, `initialize`, `alloc`, `new`, `copy`, `mutableCopy`,
+  `dealloc`, `retain`, `release`, `autorelease`, `class`, `self`, `hash`,
+  `isEqual:`, `zone`, `description` that is not an override,
+  `respondsToSelector:` and the forwarding and resolving methods; a method or
+  getter in the alloc, new, copy, mutableCopy or init family that is no
+  initializer, which ARC reads as returning a retained object; on a responder,
+  an edit action `UIResponder.h` declares (`cut:`, `copy:`, `paste:`,
+  `delete:`, `select:`, `find:`, `rename:`, …), which UIKit's edit menus would
+  offer and call with the menu as the argument; and a selector, public or
+  private, the Apple superclasses already answer, which Swift catches only when
+  a header declares it. Such a member keeps its Swift name and takes
+  `@objc(apelin_<name>)`; two that would share a selector each name theirs.
+  After adding classes or members, build and run
+  `Scripts/audit-objc-selectors.sh <products folder>` (`$(DERIVED_DATA)/Build/Products/Release-iphoneos`):
+  it reads the selectors of every class of ours in the built app, extension,
+  daemon and workers, compares them with what the Apple superclasses answer
+  at run time (a Mac Catalyst probe), and reports each collision, forbidden
+  name, optional delegate method answered by accident and plain override in a
+  final class; fix them, or list one kept on purpose in its `ACCEPTED` with the
+  reason, before committing.
 
 ## Decisions
 
@@ -924,6 +1008,24 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   releases (a product Apple lists that Apelin has not reviewed is left
   out, `ToolchainProduct.reviewed`); a kept one this device cannot run
   stays, with its reason.
+  roothide Bootstrap, the TrollStore one, runs none of them (issue #35;
+  `HostSigning` in ApelinCore): it trust-caches nothing it installs and
+  runs only a Mach-O carrying the CoreTrust-bypass signature its dpkg
+  hook writes (Bootstrap-basebin `autosign.m`: its own `ldid`, then
+  `fastPathSign`), and what Apelin signs is ad hoc and goes through
+  irisind, never dpkg — on the reporter's iPhone clang was "Bad
+  executable" at the self-test.
+  It is known by the mark Bootstrap writes in its root, `.thebootstrapped`
+  (`.bootstrapped` in its betas), which Dopamine-roothide refuses to
+  jailbreak over. There every release carries that one reason, setup and
+  a toolchain transfer import are refused before anything downloads or
+  installs, `projectCheck` says it as `environment.device.toolchain`, and
+  the welcome page's Build Tools says it in place of its introduction,
+  which promises Settings, and lists no pair
+  (`WelcomeEnvironmentIntroduction`).
+  Real support would mean writing Bootstrap's signature on everything
+  Apelin signs and installs, which nothing here can test; it waits for a
+  Bootstrap device.
   Each release reads SDKs up to its Xcode's (`newestSDK`, major.minor),
   which the record keeps: the self-test compiles against the newest
   registered SDK the release reads. When none fits, the same setup task
@@ -2032,7 +2134,8 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   GitHub Copilot, Kimi For Coding (kimi.com and, from kwwk 0.1.108, Kimi
   For Coding Global on kimi.ai, each with its own device id) and Grok;
   Safari with kwwk's loopback
-  listener for Claude Pro or Max, ChatGPT Codex, Devin and OpenRouter; a
+  listener for Claude Pro or Max, ChatGPT Codex, Devin, OpenRouter and,
+  from kwwk 0.1.110, Antigravity; a
   page kwwk polls for Cursor, Qoder, Qoder CN, WorkBuddy, WorkBuddy AI, Z.ai
   and BigModel; Kiro's own listener — and every API-key entry of KWWKCli's
   `loginProviders` (Anthropic, OpenAI, Google AI Studio, OpenRouter,
@@ -2053,6 +2156,23 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   only the cases, the key forms and model discovery at the plan's
   `<root>/v1/models`, which, like kwwk's routes, never reads a `baseUrl`
   an imported credential carries.
+  Antigravity (owner, 2026-11-04; kwwk 0.1.110 and 0.1.111,
+  `AntigravityOAuth`, `registerAntigravity`) is Google's: a Google sign-in
+  with Antigravity's own client, PKCE and its registered loopback, after
+  which kwwk finds the account's Code Assist project, onboarding a new
+  account and polling until Google has set it up, and keeps the project,
+  the tier and, when Google names it, the email as extras; it renews at Google (`upkeep: .refreshed`, in
+  `KimiIdentity.refreshers()` with the rest) and answers through Code
+  Assist's `streamGenerateContent`. A free Google account signs in too;
+  which models a plan serves is Google's. Apelin adds the case, after
+  Cursor in the order, and its mark (its official logo on a white plate):
+  the models are kwwk's bundled list for it (`antigravity`, from 0.1.111
+  Gemini 4 Argon, Gemini 3.8 Flash, Claude Opus 5.5 and Sonnet 5.5 among
+  them), enabled with no check like any subscription's, and a model the
+  account is not served fails its chat in Google's words. kwwk waits out
+  a 429 that says it is back within a minute and fails one that says the
+  quota is spent (its `ProviderFailures.md`); its quota reader
+  (`OAuthUsage`) is shown nowhere, as for every subscription.
   Display order is Apelin's `AgentProvider.signInOrder`, independent of
   kwwk's registration order;
   `AccountDeskTests` fails when kwwk gains a subscription or a stored
@@ -2098,7 +2218,8 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   refresh token or authorization code is exposed; the device code is the one
   thing the flow shows. A loopback redirect is the URI kwwk registered for
   that provider (Claude's `http://localhost:53692/callback`, Codex's port
-  1455, Devin's `127.0.0.1:59653`, OpenRouter's port 53693): kwwk's NIO listener in
+  1455, Devin's `127.0.0.1:59653`, OpenRouter's port 53693, Antigravity's
+  `http://localhost:51121/oauth-callback`): kwwk's NIO listener in
   the worker, through kwwk's `loopback` seam (`PasteableLoopback`), answers
   Safari on the same device, and is raced against the redirect address
   pasted from Safari's address bar for a device where it cannot. No
@@ -2107,10 +2228,11 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   cookies. Proven on the Mac by `AccountDeskTests` (fake flows and
   listener, an in-memory store, no secret in any event: a device code that
   is typed and one that is only checked, Kimi's device id, a loopback with
-  a paste, a polled page, every key form, OpenRouter both ways, kwwk's
-  lists covered); on a device by `Documents/Console/scripts/accounts.json`
-  (start, read, refuse and cancel a device code, a loopback, a polled page
-  and two key forms; signs nothing in) and, by name,
+  a paste, Antigravity's own kwwk login up to its Google page, a polled
+  page, every key form, OpenRouter both ways, kwwk's lists covered); on a
+  device by `Documents/Console/scripts/accounts.json` (start, read, refuse
+  and cancel a device code, two loopbacks, OpenRouter's and Antigravity's,
+  a polled page and two key forms; signs nothing in) and, by name,
   `a2-api-key-sign-in.json` (a placeholder key in and out again, which
   replaces the device's openai-compatible sign-in); the real sign-ins by
   hand.
@@ -2394,7 +2516,12 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   without closing a drawer; only a row or New Chat the reader picked puts
   the drawer away. A drawer always has a conversation behind it: an empty
   project, deleting the picked conversation, or a window narrowing onto the
-  icon starts one. The drawer's pan yields to content scrolled sideways (a
+  icon starts one — only if the icon is still there once that layout pass
+  is over: launched in the background (a Live Activity relaunches the app
+  after a reboot), the scene is not laid out before the saved
+  conversation is restored, its first layout comes inside the restore's
+  own showing of it, and a New Chat took its place (issue #38). The
+  drawer's pan yields to content scrolled sideways (a
   code block, a table, the attachments) and to a text selection. Pinned
   conversations come first, the rest under the day the reader last started
   or wrote in each (Today, Yesterday, the weekday
@@ -2421,8 +2548,8 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   (`ChatDeletion`). Settings and the picker are form
   sheets through Xrash's `presentAsFormSheet` (`Interface/Components/`). The
   list contains only persisted conversations; no sample conversation is injected at launch.
-  `ChatRuntime` owns drafts, session IDs, task cursors and histories; each chat is atomically saved under `Chats/`. A chat is removed from memory only after its session closes (an absent session is already closed) and its file is deleted; later queued saves cannot restore it.
-  Projects are read from validated project folders, and the picker refreshes them on appearance. Its swipe and context menu can delete a project after confirming its name: close its chat sessions, remove only its real direct-child directory in `Projects/` without following links, then remove its chat histories. A project whose folder goes some other way — an agent's apelin_project_delete, a command, another app — takes its conversations with it the same way (`DeletedProjects`, `ChatRuntime.forgetDeletedProjects`), at launch and on each change `ProjectCatalogMonitor` reports: banners withdrawn, any session the host left open closed, histories removed, and the sidebar on General Chat when it showed that project; a `Projects/` that does not read takes nothing. With nothing picked the detail column shows
+  `ChatRuntime` owns drafts, session IDs, task cursors and histories; each chat is atomically saved under `Chats/`. A saved chat that does not decode is moved into `Chats/Unreadable/` and named in the journal, never left to stop the others loading, and a `Chats/` that cannot be read still leaves the list loaded, empty, so a new chat starts (issue #33). A chat is removed from memory only after its session closes (an absent session is already closed) and its file is deleted; later queued saves cannot restore it.
+  Projects are read from validated project folders, and the picker refreshes them on appearance. Its swipe and context menu can delete a project after confirming its name: close its chat sessions, remove only its real direct-child directory in `Projects/` without following links, then remove its chat histories. A project whose folder goes some other way — an agent's apelin_project_delete, a command, another app — takes its conversations with it the same way (`DeletedProjects`, `ChatRuntime.forgetDeletedProjects`), at launch and on each change `ProjectCatalogMonitor` reports: banners withdrawn, any session the host left open closed, histories removed, and the sidebar on General Chat when it showed that project; a `Projects/` that does not read takes nothing. Only a disappearance the app saw counts (#37): a project listed in an earlier reading of the same `Projects/`, by its device and inode, and missing from this one, the names last read kept beside it in `projects-seen.json` (a name gone stays there while a conversation of it is left, so one not taken away is tried again). A folder the app has not read before has seen nothing and takes nothing: a wrong data folder (0.3.5 on rootless read its data container's empty `Projects/` and took every project's conversations at each launch), a `Projects/` made again after it went, the first reading after an upgrade. With nothing picked the detail column shows
   the app's icon (`NothingSelectedController`) beside the sidebar; behind a
   drawer it is always a conversation. The placeholder cross-fades into a
   selected page, and the first transcript layout jumps to the bottom without
@@ -2622,10 +2749,11 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   never a folder Dog makes), and writes a launch header, its paths through
   `AppJournal.redaction` (`~`, `<install root>`). `DataFolder.app`,
   not `DataFolder(home: NSHomeDirectory())`: on roothide `NSHomeDirectory()`
-  is the system's `/var/mobile`, not the bootstrap's. Never call it with no
-  argument: its default is `.documentDirectory`, which for an app with no
-  container is mobile's shared `~/Documents`, and the journal would land in
-  `~/Documents/Journal`. Dog keeps 128 files by default and mirrors every
+  is the system's `/var/mobile`, not the bootstrap's, and on rootless the
+  app's data container. Never call it with no argument: its default is
+  `.documentDirectory`, the app's own home's (mobile's shared `~/Documents`
+  on roothide, the data container's on rootless), and the journal would
+  land in its `Journal`. Dog keeps 128 files by default and mirrors every
   line to the unified log under its own subsystem, `com.lakr233.dog`. It
   is the app's alone: apelind and the workers never link it and keep their
   own logging, and no task, scope or operation reads the journal.
@@ -2733,6 +2861,12 @@ What `CHECKLIST.md` asked to be written down, and where the answer lives.
   passed; tools are `<path>/usr/bin/<tool>` (or the CLT's
   `Library/Developer/CommandLineTools/usr/bin`). A project builds only
   against the toolchain and SDK whose ID *and* digest it is bound to.
+  A record's `path` names the bootstrap root it was registered under,
+  which roothide renames on a reboot (issue #34), so every reader of the
+  records — `ToolchainRegistry.load`, `SDKStore.list`, `EnvironmentStores`,
+  `RegisteredEnvironment.read` — takes it through ApelinCore's
+  `BootstrapRootPath.rebased` onto a path of its own under the current
+  root first; rootless paths are left as they are.
 - **A build** (`ApelinBuild`) has one ID: the host's task ID, which is
   `APELIN_BUILD_ID`, the artifact ID and what `confirmLoaded` takes. Its
   layout comes from the assignment — mobile's home inside the install root
@@ -3409,7 +3543,7 @@ adding a dated record beside it.
 
 ## Live chat and project UI (2026-10-21)
 
-- `ChatRuntime` keeps one reader per live session while the user switches pages. It persists ordered host events and reattaches after the saved cursor. A save that fails (a full disk, a folder it cannot write) leaves the conversation running in memory: `StorageWarning` says so once — "Storage Almost Full" when less than 512 MB is free, else the error — and not again until a save gets through; the unsaved conversations are written with the next save that works and on every return to the foreground, and the same notice comes at launch or on return when free space is already under 512 MB. Sending text never needs the disk; only attachments are staged. A stopped host can reopen the persisted session ID; the host and worker refuse a different workspace identity. A reopened session comes back as a new task that replays the whole history, renumbered and newly timed, before anything new; the conversation keeps the events it has and reads past that replay (`ChatRecord.reopen(as:)`, `SessionReplay`, saved with the record) to the first user message or compaction it has not seen (Compact… reopens a stopped session with no message after it), or to the task's own end, so the rows on screen stay as they are. A terminal `state` is never read as the replay (the worker replays only the states an approval sets), so a task that stops before catching up (its worker died, the host stopped, a second open failed) ends the turn as a first task does. A conversation an earlier version saved with its cursor past that end takes it again when an attach answers `finished` while its transcript still runs a turn (`ChatRecord.missedEnd`, `takeMissedEnd`): that one event, read again from just before the task's last seq; the row stops working even when it cannot be read. Never empty the events for a new task: the list would collapse to the message being sent and land at the top of the history when the replay came back. Rows are numbered by their event's position, not its seq, since a reopened task's numbering starts again. Stop calls `agentAbort`; approval buttons call `agentApprove` and wait for the authoritative resolved event.
+- `ChatRuntime` keeps one reader per live session while the user switches pages. It persists ordered host events and reattaches after the saved cursor. A save that fails (a full disk, a folder it cannot write) leaves the conversation running in memory: `StorageWarning` says so once — "Storage Almost Full" when less than 512 MB is free, else the error — and not again until a save gets through; the unsaved conversations are written with the next save that works and on every return to the foreground, and the same notice comes at launch or on return when free space is already under 512 MB. Sending text never needs the disk; only attachments are staged. A stopped host can reopen the persisted session ID; the host and worker refuse a different workspace identity. A reopened session comes back as a new task that replays the whole history, renumbered and newly timed, before anything new; the conversation keeps the events it has and reads past that replay (`ChatRecord.reopen(as:)`, `SessionReplay`, saved with the record) to the first user message or compaction it has not seen (Compact… reopens a stopped session with no message after it), or to the task's own end, so the rows on screen stay as they are. Of the replay it keeps only the resolution the reopened worker writes (deny, "the session restarted") for each approval an earlier task left waiting (`SessionReplay.resolvesWaitingApproval`): that task has ended, so the approval can never be answered, and read past, its card stood in for the composer on every later turn while Approve and Deny answered that it was no longer waiting (issue #38). A terminal `state` is never read as the replay (the worker replays only the states an approval sets), so a task that stops before catching up (its worker died, the host stopped, a second open failed) ends the turn as a first task does. A conversation an earlier version saved with its cursor past that end takes it again when an attach answers `finished` while its transcript still runs a turn (`ChatRecord.missedEnd`, `takeMissedEnd`): that one event, read again from just before the task's last seq; the row stops working even when it cannot be read. Never empty the events for a new task: the list would collapse to the message being sent and land at the top of the history when the replay came back. Rows are numbered by their event's position, not its seq, since a reopened task's numbering starts again. Stop calls `agentAbort`; approval buttons call `agentApprove` and wait for the authoritative resolved event.
 - `agentPrompt` accepts an optional message UUID and descriptor-indexed attachments (at most eight, at most 32 MiB each). The worker saves them under random workspace-relative `Attachments/` paths; filenames remain display metadata. The session log records the message UUID and relative attachments, deduplicates a retried send, and supplies image content to the provider. Tool-returned images are saved the same way and replay into the image album UI. So are the files `file_show` puts in front of the reader (2026-10-29, `Tools/FileShow.swift`), the agent's one way to show a project file, since a path or a `file:` link in a reply opens nothing: one to eight regular files inside the project, each at most 32 MiB, every one checked before any is copied into `Attachments/` as it is then, listed in the result's `details` (which no provider reads) and handed by the session to the call's `toolResult` attachments, where the album, the document cards and Quick Look show them. A read preset with no host request; the model hears what was shown, never the contents.
 - Every app prompt also carries the current approval mode and Ask Before Using the Screen, which the message's `<system-state>` names beside the mode (owner, 2026-10-30). The host updates its ledger and session table before forwarding; the session updates its tool policy and metadata, records the message (its `prompt` or `queued` event, the text alone), then builds the message's `<system-state>`: the mode reaches the model there, with whatever the session's system prompt shows that changed since (Prompt caching). A prompt naming the provider and model the session already resolved, with the same stored sign-in, keeps that resolution: no token exchange before the message is recorded, and a signed-out provider is still refused. An existing pending approval is not silently accepted. A bounded, tool-free completion on the current model summarizes the first user message into a `title` event; title failure leaves the local fallback and does not fail the turn; a later message asks again, until three completions have named nothing (`maximumTitleMisses`) or, while the project keeps its generated name, on every message. A JSON answer in one Markdown fence is read as the JSON.
 - `ChatRuntime.transcript` brings a conversation's rows up to date only when they would differ (`ChatTranscriptCache`, kept for the followed conversations and the page's). `ChatTranscript` is a fold: new events (`ChatRecord.events` are only appended to) are read onto the rows the earlier ones made (`append`), and the rows shown are made afresh from those, as a build from every event at once at the same `now` makes them (`Tests/ChatTranscript/TranscriptFold.swift` compares the two over random logs). A change to the messages it is sending, or a `quietDeadline` passed since it was shown, shows the rows again, so the refresh `ChatQuietWatch` asks for at the deadline adds the stand-in; only a sender's new title builds it again from every event. A row equal to one shown before is that very value, so the page's comparison stops at its storage. The composer is told of its approval request and its Stop only when either changes, a long-poll that ran out with nothing writes nothing, and a conversation is written once at a time, then once more with what changed meanwhile.
@@ -3480,7 +3614,9 @@ Delete takes them. It goes by the folder rather than by an event on the
 deleting conversation's task because the app may not be following that
 task (closed, or the host restarted since), and because a folder another
 app or a command removed is just as gone; a folder renamed outside Apelin,
-whose conversations were already unreachable, loses them too. Tested by
+whose conversations were already unreachable, loses them too. Only a
+folder the app listed before in that `Projects/` counts as gone
+(`DeletedProjects`), so a wrong or new `Projects/` takes nothing. Tested by
 `ProjectDeletionTests` (ApelinKit), the session host's checks (the
 temporary folder, the link, another id, the session's own project,
 Strict's spend, the sessions closed), `ProjectDeleteToolTests` and
@@ -4087,7 +4223,7 @@ fragment. The chat's ListViewKit keeps its own update mechanism.
   done grey, failed red (a last turn that finished `failed`, or was cut off
   by its task failing or being interrupted); with no conversation, New Chat.
 - **The snapshot.** The extension is sandboxed and cannot read mobile's
-  Documents, and the app has no container, so the app writes
+  Documents, where the app's data is, so the app writes
   `ChatWidgetSnapshot` to `Widgets/chats.json` in the App Group container
   `group.wiki.qaq.apelin`, which both targets carry — the way Fila's save
   action shares Fila's. `make check` and the packager require exactly that

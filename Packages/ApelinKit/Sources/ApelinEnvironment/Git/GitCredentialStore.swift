@@ -41,8 +41,17 @@ public struct KeychainGitCredentialStore: GitCredentialStore {
         }
         guard status == errSecSuccess, let items = result as? [[String: Any]] else { throw Self.failure(status) }
         let hosts = items.compactMap { $0[kSecAttrAccount as String] as? String }
+        // An item whose contents do not read leaves it out alone: the list,
+        // and the whole Settings ▸ Git page with it, never fails for it. The
+        // keychain itself failing (locked, say) is still the list's failure,
+        // never read as "not signed in".
         return try hosts.sorted().compactMap { host in
-            try credential(forHost: host).map { GitCredentialSummary(host: host, username: $0.username) }
+            do {
+                // persisted-read: caught per item below; only the keychain's own failure goes on
+                return try credential(forHost: host).map { GitCredentialSummary(host: host, username: $0.username) }
+            } catch let error as ApelinError where error.code != .unavailable {
+                return nil
+            }
         }
     }
 
@@ -136,7 +145,7 @@ public final class MemoryGitCredentialStore: GitCredentialStore, @unchecked Send
         lock.withLock { items[host] = credential }
     }
 
-    public func remove(host: String) throws {
+    @objc public dynamic func remove(host: String) throws {
         lock.withLock { items[host] = nil }
     }
 }

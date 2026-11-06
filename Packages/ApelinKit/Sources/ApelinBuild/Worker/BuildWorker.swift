@@ -101,7 +101,7 @@ public final class BuildWorker: @unchecked Sendable {
     /// The host closed the channel: kill every build's tools before the
     /// worker exits, so none of them writes into a folder a resumed build
     /// is starting over in.
-    public func killAll() {
+    @objc public dynamic func killAll() {
         lock.lock()
         let all = Array(running.values)
         lock.unlock()
@@ -224,7 +224,7 @@ public final class BuildWorker: @unchecked Sendable {
         if let (_, root) = try? store.root(of: request.projectID), let manifest = Workspace.manifest(at: root) {
             return Self.workspaceCheck(manifest, root: root)
         }
-        let check = ProjectCheck(store: store, catalog: catalog, registry: registry)
+        let check = ProjectCheck(store: store, catalog: catalog, registry: registry, installRoot: installRoot)
         var candidate: ProjectDocument.EnvironmentBinding?
         if let choice = request.environment, let current = try? store.locate(request.projectID).project.environment {
             candidate = try check.binding(choice, replacing: current)
@@ -415,7 +415,7 @@ final class TaskReporter: BuildReporter, @unchecked Sendable {
         self.emit = emit
     }
 
-    func stage(_ name: String, product: String?) {
+    @objc dynamic func stage(_ name: String, product: String?) {
         var payload: [String: JSONValue] = ["stage": .string(name)]
         if let product {
             payload["product"] = .string(product)
@@ -423,7 +423,7 @@ final class TaskReporter: BuildReporter, @unchecked Sendable {
         emit(taskID, "stage", .object(payload))
     }
 
-    func log(_ line: String) {
+    @objc dynamic func log(_ line: String) {
         emit(taskID, "log", .object(["line": .string(line)]))
     }
 
